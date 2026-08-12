@@ -1,6 +1,6 @@
 import React, { useState, useEffect, createContext, useContext } from "react";
 import { Routes, Route, Link, useParams, useNavigate } from "react-router-dom";
-import { ShoppingBag, X, Plus, Minus, Sparkles, Loader2, ChevronLeft } from "lucide-react";
+import { ShoppingBag, X, Plus, Minus, Sparkles, Loader2, ChevronLeft, Menu } from "lucide-react";
 
 const API_BASE = import.meta.env.VITE_API_BASE || "";
 
@@ -150,39 +150,74 @@ function ProductCard({ product }) {
   );
 }
 
+function MenuOverlay({ open, onClose }) {
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-50" style={{ background: COLORS.stone }}>
+      <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: `1px solid ${COLORS.line}` }}>
+        <span style={{ fontFamily: FONT.display, color: COLORS.ink, letterSpacing: "0.08em" }} className="text-lg font-semibold uppercase">
+          Menu
+        </span>
+        <button onClick={onClose} aria-label="Close menu">
+          <X size={22} color={COLORS.ink} />
+        </button>
+      </div>
+      <nav className="flex flex-col px-4 pt-6">
+        {[
+          { to: "/", label: "Home" },
+          { to: "/women", label: "Women" },
+          { to: "/men", label: "Men" },
+        ].map((item) => (
+          <Link
+            key={item.to}
+            to={item.to}
+            onClick={onClose}
+            className="py-4 text-3xl font-semibold uppercase"
+            style={{ fontFamily: FONT.display, color: COLORS.ink, borderBottom: `1px solid ${COLORS.line}` }}
+          >
+            {item.label}
+          </Link>
+        ))}
+      </nav>
+    </div>
+  );
+}
+
 function Header() {
   const { totalQty, setDrawerOpen } = useCart();
+  const [menuOpen, setMenuOpen] = useState(false);
   return (
     <header
       className="sticky top-0 z-30 flex items-center justify-between px-4 py-3"
       style={{ background: COLORS.stone, borderBottom: `1px solid ${COLORS.line}` }}
     >
+      <button
+        onClick={() => setMenuOpen(true)}
+        aria-label="Open menu"
+        className="flex items-center justify-center w-9 h-9 rounded-full shrink-0"
+        style={{ border: `1px solid ${COLORS.ink}` }}
+      >
+        <Menu size={16} color={COLORS.ink} />
+      </button>
       <Link to="/" style={{ fontFamily: FONT.display, color: COLORS.ink, letterSpacing: "0.08em" }} className="text-lg font-semibold uppercase">
         Zamarmode
       </Link>
-      <nav className="flex items-center gap-4">
-        <Link to="/women" className="text-xs uppercase" style={{ fontFamily: FONT.mono, color: COLORS.muted, letterSpacing: "0.05em" }}>
-          Women
-        </Link>
-        <Link to="/men" className="text-xs uppercase" style={{ fontFamily: FONT.mono, color: COLORS.muted, letterSpacing: "0.05em" }}>
-          Men
-        </Link>
-        <button
-          onClick={() => setDrawerOpen(true)}
-          className="relative flex items-center justify-center w-9 h-9 rounded-full shrink-0"
-          style={{ border: `1px solid ${COLORS.ink}` }}
-        >
-          <ShoppingBag size={16} color={COLORS.ink} />
-          {totalQty > 0 && (
-            <span
-              className="absolute -top-1 -right-1 text-[10px] w-4 h-4 rounded-full flex items-center justify-center text-white"
-              style={{ background: COLORS.brick, fontFamily: FONT.mono }}
-            >
-              {totalQty}
-            </span>
-          )}
-        </button>
-      </nav>
+      <button
+        onClick={() => setDrawerOpen(true)}
+        className="relative flex items-center justify-center w-9 h-9 rounded-full shrink-0"
+        style={{ border: `1px solid ${COLORS.ink}` }}
+      >
+        <ShoppingBag size={16} color={COLORS.ink} />
+        {totalQty > 0 && (
+          <span
+            className="absolute -top-1 -right-1 text-[10px] w-4 h-4 rounded-full flex items-center justify-center text-white"
+            style={{ background: COLORS.brick, fontFamily: FONT.mono }}
+          >
+            {totalQty}
+          </span>
+        )}
+      </button>
+      <MenuOverlay open={menuOpen} onClose={() => setMenuOpen(false)} />
     </header>
   );
 }
