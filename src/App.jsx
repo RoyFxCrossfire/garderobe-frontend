@@ -333,20 +333,39 @@ function Home() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// Category page (Women / Men) — reuses the trending feed for now.
-// Sub-category navigation matching your full taxonomy doc is the next step.
+// Category page (Women / Men) — an "All" view plus sub-category group tabs
+// (Tops & Sets, Bottoms, Outerwear, Accessories, etc.) matching the taxonomy.
 // ─────────────────────────────────────────────────────────────────────────
 function CategoryPage({ section, title }) {
+  const [groups, setGroups] = useState([]);
+  const [activeGroup, setActiveGroup] = useState(null); // null = "All"
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
 
+  // Load the sub-category tabs once per section.
+  useEffect(() => {
+    setActiveGroup(null);
+    (async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/taxonomy?section=${section}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        setGroups(data.groups || []);
+      } catch {
+        setGroups([]);
+      }
+    })();
+  }, [section]);
+
+  // Load products whenever the section or active group changes.
   useEffect(() => {
     (async () => {
       setLoading(true);
       setLoadError(null);
       try {
-        const res = await fetch(`${API_BASE}/api/catalog?section=${section}`);
+        const groupParam = activeGroup ? `&group=${encodeURIComponent(activeGroup)}` : "";
+        const res = await fetch(`${API_BASE}/api/catalog?section=${section}${groupParam}`);
         if (!res.ok) throw new Error("Could not load products.");
         const data = await res.json();
         setProducts(data.products || []);
@@ -356,7 +375,7 @@ function CategoryPage({ section, title }) {
         setLoading(false);
       }
     })();
-  }, [section]);
+  }, [section, activeGroup]);
 
   return (
     <div>
@@ -365,9 +384,43 @@ function CategoryPage({ section, title }) {
           {title}
         </h1>
         <p className="text-sm" style={{ fontFamily: FONT.body, color: COLORS.muted }}>
-          Trending picks, refreshed automatically.
+          Browse by category, sorted by popularity.
         </p>
       </section>
+
+      {groups.length > 0 && (
+        <section className="px-4 pb-3 flex gap-2 overflow-x-auto" style={{ borderTop: `1px solid ${COLORS.line}`, borderBottom: `1px solid ${COLORS.line}` }}>
+          <button
+            onClick={() => setActiveGroup(null)}
+            className="shrink-0 px-3 py-1.5 mt-3 rounded-full text-xs uppercase transition-colors"
+            style={{
+              fontFamily: FONT.mono,
+              letterSpacing: "0.05em",
+              background: activeGroup === null ? COLORS.ink : "transparent",
+              color: activeGroup === null ? COLORS.stone : COLORS.muted,
+              border: `1px solid ${activeGroup === null ? COLORS.ink : COLORS.line}`,
+            }}
+          >
+            All
+          </button>
+          {groups.map((g) => (
+            <button
+              key={g}
+              onClick={() => setActiveGroup(g)}
+              className="shrink-0 px-3 py-1.5 mt-3 rounded-full text-xs uppercase transition-colors whitespace-nowrap"
+              style={{
+                fontFamily: FONT.mono,
+                letterSpacing: "0.05em",
+                background: activeGroup === g ? COLORS.ink : "transparent",
+                color: activeGroup === g ? COLORS.stone : COLORS.muted,
+                border: `1px solid ${activeGroup === g ? COLORS.ink : COLORS.line}`,
+              }}
+            >
+              {g}
+            </button>
+          ))}
+        </section>
+      )}
 
       {loading && (
         <div className="px-4 py-16 flex flex-col items-center gap-2" style={{ color: COLORS.muted }}>
@@ -382,8 +435,14 @@ function CategoryPage({ section, title }) {
         </div>
       )}
 
+      {!loading && !loadError && products.length === 0 && (
+        <div className="px-4 py-16 text-center text-sm" style={{ color: COLORS.muted, fontFamily: FONT.body }}>
+          No products found in this category right now.
+        </div>
+      )}
+
       {!loading && !loadError && products.length > 0 && (
-        <section className="px-4 pb-16 pt-2 grid grid-cols-2 gap-x-3 gap-y-6">
+        <section className="px-4 pb-16 pt-4 grid grid-cols-2 gap-x-3 gap-y-6">
           {products.map((p) => (
             <ProductCard key={p.pid} product={p} />
           ))}
