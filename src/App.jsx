@@ -444,7 +444,11 @@ function Home() {
 // Shows one labeled sub-section per exact taxonomy leaf (e.g. "Women's
 // Camis", "Jumpsuits") within the currently active group, each with its
 // own small grid — mirrors the spec doc's structure.
-function GroupLeavesView({ section, group }) {
+function slugify(text) {
+  return text.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+}
+
+function GroupLeavesView({ section, group, scrollToLeaf, onScrolled }) {
   const [leaves, setLeaves] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
@@ -467,6 +471,17 @@ function GroupLeavesView({ section, group }) {
       }
     })();
   }, [section, group]);
+
+  // Once the leaves have loaded, if the dropdown asked us to jump to a
+  // specific one (e.g. "Women's Camis"), scroll it into view.
+  useEffect(() => {
+    if (loading || !scrollToLeaf) return;
+    const el = document.getElementById(`leaf-${slugify(scrollToLeaf)}`);
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+    onScrolled?.();
+  }, [loading, scrollToLeaf, onScrolled]);
 
   if (loading) {
     return (
@@ -496,7 +511,7 @@ function GroupLeavesView({ section, group }) {
   return (
     <div className="pb-8">
       {leaves.map((leaf) => (
-        <section key={leaf.name} className="pt-8">
+        <section key={leaf.name} id={`leaf-${slugify(leaf.name)}`} className="pt-8 scroll-mt-16">
           <h2
             className="px-4 sm:px-8 lg:px-12 mb-4 text-lg font-semibold uppercase"
             style={{ fontFamily: FONT.display, color: COLORS.ink, letterSpacing: "0.03em" }}
@@ -515,10 +530,12 @@ function GroupLeavesView({ section, group }) {
 }
 
 function CategoryPage({ section, title }) {
-  const [groups, setGroups] = useState([]);
+  const [groups, setGroups] = useState([]); // [{ label, leaves }]
   const [activeGroup, setActiveGroup] = useState(null); // null = "All"
+  const [openDropdown, setOpenDropdown] = useState(null); // group label currently showing its dropdown
+  const [scrollToLeaf, setScrollToLeaf] = useState(null);
 
-  // Load the sub-category tabs once per section.
+  // Load the sub-category tabs (with their leaves) once per section.
   useEffect(() => {
     setActiveGroup(null);
     (async () => {
@@ -545,6 +562,12 @@ function CategoryPage({ section, title }) {
     { skip: activeGroup !== null }
   );
 
+  const jumpToLeaf = (groupLabel, leafName) => {
+    setActiveGroup(groupLabel);
+    setScrollToLeaf(leafName);
+    setOpenDropdown(null);
+  };
+
   return (
     <div>
       <section className="px-4 sm:px-8 lg:px-12 pt-6 pb-4">
@@ -557,7 +580,10 @@ function CategoryPage({ section, title }) {
       </section>
 
       {groups.length > 0 && (
-        <section className="px-4 sm:px-8 lg:px-12 pb-3 flex gap-2 overflow-x-auto" style={{ borderTop: `1px solid ${COLORS.line}`, borderBottom: `1px solid ${COLORS.line}` }}>
+        <section
+          className="px-4 sm:px-8 lg:px-12 pb-3 flex flex-wrap gap-2 relative"
+          style={{ borderTop: `1px solid ${COLORS.line}`, borderBottom: `1px solid ${COLORS.line}` }}
+        >
           <button
             onClick={() => setActiveGroup(null)}
             className="shrink-0 px-3 py-1.5 mt-3 rounded-full text-xs uppercase transition-colors"
@@ -572,25 +598,59 @@ function CategoryPage({ section, title }) {
             All
           </button>
           {groups.map((g) => (
-            <button
-              key={g}
-              onClick={() => setActiveGroup(g)}
-              className="shrink-0 px-3 py-1.5 mt-3 rounded-full text-xs uppercase transition-colors whitespace-nowrap"
-              style={{
-                fontFamily: FONT.mono,
-                letterSpacing: "0.05em",
-                background: activeGroup === g ? COLORS.ink : "transparent",
-                color: activeGroup === g ? COLORS.stone : COLORS.muted,
-                border: `1px solid ${activeGroup === g ? COLORS.ink : COLORS.line}`,
-              }}
+            <div
+              key={g.label}
+              className="relative shrink-0"
+              onMouseEnter={() => setOpenDropdown(g.label)}
+              onMouseLeave={() => setOpenDropdown(null)}
             >
-              {g}
-            </button>
+              <button
+                onClick={() => {
+                  setActiveGroup(g.label);
+                  setOpenDropdown(null);
+                }}
+                className="shrink-0 px-3 py-1.5 mt-3 rounded-full text-xs uppercase transition-colors whitespace-nowrap"
+                style={{
+                  fontFamily: FONT.mono,
+                  letterSpacing: "0.05em",
+                  background: activeGroup === g.label ? COLORS.ink : "transparent",
+                  color: activeGroup === g.label ? COLORS.stone : COLORS.muted,
+                  border: `1px solid ${activeGroup === g.label ? COLORS.ink : COLORS.line}`,
+                }}
+              >
+                {g.label}
+              </button>
+
+              {openDropdown === g.label && g.leaves?.length > 0 && (
+                <div
+                  className="absolute left-0 top-full mt-1 rounded-sm overflow-hidden z-40 min-w-[220px]"
+                  style={{ background: COLORS.card, border: `1px solid ${COLORS.line}`, boxShadow: "0 8px 20px rgba(0,0,0,0.12)" }}
+                >
+                  {g.leaves.map((leaf) => (
+                    <button
+                      key={leaf}
+                      onClick={() => jumpToLeaf(g.label, leaf)}
+                      className="block w-full text-left px-4 py-2 text-sm hover:opacity-70"
+                      style={{ fontFamily: FONT.body, color: COLORS.ink, borderBottom: `1px solid ${COLORS.line}` }}
+                    >
+                      {leaf}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           ))}
         </section>
       )}
 
-      {activeGroup !== null && <GroupLeavesView section={section} group={activeGroup} />}
+      {activeGroup !== null && (
+        <GroupLeavesView
+          section={section}
+          group={activeGroup}
+          scrollToLeaf={scrollToLeaf}
+          onScrolled={() => setScrollToLeaf(null)}
+        />
+      )}
 
       {activeGroup === null && (
         <>
