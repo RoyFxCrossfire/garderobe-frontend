@@ -1,4 +1,4 @@
-import React, { useState, useEffect, createContext, useContext } from "react";
+import React, { useState, useEffect, useRef, useCallback, createContext, useContext } from "react";
 import { Routes, Route, Link, useParams, useNavigate } from "react-router-dom";
 import { ShoppingBag, X, Plus, Minus, Sparkles, Loader2, ChevronLeft, Menu } from "lucide-react";
 
@@ -154,7 +154,7 @@ function MenuOverlay({ open, onClose }) {
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-50" style={{ background: COLORS.stone }}>
-      <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: `1px solid ${COLORS.line}` }}>
+      <div className="flex items-center justify-between px-4 sm:px-8 lg:px-12 py-3" style={{ borderBottom: `1px solid ${COLORS.line}` }}>
         <span style={{ fontFamily: FONT.display, color: COLORS.ink, letterSpacing: "0.08em" }} className="text-lg font-semibold uppercase">
           Menu
         </span>
@@ -162,7 +162,7 @@ function MenuOverlay({ open, onClose }) {
           <X size={22} color={COLORS.ink} />
         </button>
       </div>
-      <nav className="flex flex-col px-4 pt-6">
+      <nav className="flex flex-col px-4 sm:px-8 lg:px-12 pt-6">
         {[
           { to: "/", label: "Home" },
           { to: "/women", label: "Women" },
@@ -188,7 +188,7 @@ function Header() {
   const [menuOpen, setMenuOpen] = useState(false);
   return (
     <header
-      className="sticky top-0 z-30 flex items-center justify-between px-4 py-3"
+      className="sticky top-0 z-30 flex items-center justify-between px-4 sm:px-8 lg:px-12 py-3"
       style={{ background: COLORS.stone, borderBottom: `1px solid ${COLORS.line}` }}
     >
       <button
@@ -224,7 +224,7 @@ function Header() {
 
 function Footer() {
   return (
-    <footer className="px-4 py-6 text-center text-xs" style={{ color: COLORS.muted, fontFamily: FONT.body, borderTop: `1px solid ${COLORS.line}` }}>
+    <footer className="px-4 sm:px-8 lg:px-12 py-6 text-center text-xs" style={{ color: COLORS.muted, fontFamily: FONT.body, borderTop: `1px solid ${COLORS.line}` }}>
       Zamarmode — Women, Men & Accessories
     </footer>
   );
@@ -237,7 +237,7 @@ function CartDrawer() {
     <div className="fixed inset-0 z-40 flex justify-end">
       <div className="absolute inset-0" style={{ background: "rgba(27,27,31,0.4)" }} onClick={() => setDrawerOpen(false)} />
       <div className="relative w-[85%] max-w-sm h-full flex flex-col" style={{ background: COLORS.stone }}>
-        <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: `1px solid ${COLORS.line}` }}>
+        <div className="flex items-center justify-between px-4 sm:px-8 lg:px-12 py-3" style={{ borderBottom: `1px solid ${COLORS.line}` }}>
           <span style={{ fontFamily: FONT.display, color: COLORS.ink }} className="uppercase text-sm font-semibold tracking-wide">
             Cart
           </span>
@@ -245,7 +245,7 @@ function CartDrawer() {
             <X size={18} color={COLORS.ink} />
           </button>
         </div>
-        <div className="flex-1 overflow-y-auto px-4 py-3">
+        <div className="flex-1 overflow-y-auto px-4 sm:px-8 lg:px-12 py-3">
           {cart.length === 0 ? (
             <p className="text-sm mt-6 text-center" style={{ color: COLORS.muted, fontFamily: FONT.body }}>
               Nothing added yet.
@@ -278,7 +278,7 @@ function CartDrawer() {
           )}
         </div>
         {cart.length > 0 && (
-          <div className="px-4 py-4" style={{ borderTop: `1px solid ${COLORS.line}` }}>
+          <div className="px-4 sm:px-8 lg:px-12 py-4" style={{ borderTop: `1px solid ${COLORS.line}` }}>
             <div className="flex items-center justify-between mb-3">
               <span className="text-sm uppercase" style={{ fontFamily: FONT.mono, color: COLORS.muted }}>Total</span>
               <PriceTag value={totalPrice} size="text-lg" />
@@ -301,31 +301,96 @@ function CartDrawer() {
 // Home — "New arrivals" only, per the spec: no full trending dump here,
 // just curated new products/offers linking straight to the product itself.
 // ─────────────────────────────────────────────────────────────────────────
-function Home() {
+// ─────────────────────────────────────────────────────────────────────────
+// Infinite scroll: fetches a page of products, and exposes loadMore() which
+// grabs the next slice from the backend's cached pool (no extra CJ calls —
+// see offset/limit handling in routes/catalog.js). Re-fetches from scratch
+// whenever `deps` changes (e.g. switching sub-category tabs).
+// ─────────────────────────────────────────────────────────────────────────
+const PAGE_SIZE = 24;
+
+function useInfiniteProducts(buildUrl, deps) {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [loadError, setLoadError] = useState(null);
+  const [hasMore, setHasMore] = useState(true);
+  const offsetRef = useRef(0);
+
+  const fetchPage = useCallback(
+    async (offset, isInitial) => {
+      if (isInitial) {
+        setLoading(true);
+        setLoadError(null);
+      } else {
+        setLoadingMore(true);
+      }
+      try {
+        const res = await fetch(buildUrl(offset, PAGE_SIZE));
+        if (!res.ok) throw new Error("Could not load products.");
+        const data = await res.json();
+        const page = data.products || [];
+        setProducts((prev) => (isInitial ? page : [...prev, ...page]));
+        setHasMore(Boolean(data.hasMore));
+        offsetRef.current = offset + page.length;
+      } catch (err) {
+        if (isInitial) setLoadError(err.message);
+      } finally {
+        if (isInitial) setLoading(false);
+        else setLoadingMore(false);
+      }
+    },
+    [buildUrl]
+  );
 
   useEffect(() => {
-    (async () => {
-      setLoading(true);
-      setLoadError(null);
-      try {
-        const res = await fetch(`${API_BASE}/api/catalog/new`);
-        if (!res.ok) throw new Error("Could not load new arrivals.");
-        const data = await res.json();
-        setProducts(data.products || []);
-      } catch (err) {
-        setLoadError(err.message);
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, []);
+    offsetRef.current = 0;
+    setHasMore(true);
+    fetchPage(0, true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, deps);
+
+  const loadMore = useCallback(() => {
+    if (loading || loadingMore || !hasMore) return;
+    fetchPage(offsetRef.current, false);
+  }, [loading, loadingMore, hasMore, fetchPage]);
+
+  return { products, loading, loadingMore, loadError, hasMore, loadMore };
+}
+
+// Invisible marker at the bottom of the grid — once it scrolls into view,
+// it triggers loading the next page.
+function LoadMoreButton({ onClick, loading }) {
+  return (
+    <div className="flex justify-center pb-16">
+      <button
+        onClick={onClick}
+        disabled={loading}
+        className="px-6 py-2.5 rounded-sm text-xs uppercase disabled:opacity-60 flex items-center gap-2"
+        style={{
+          fontFamily: FONT.mono,
+          letterSpacing: "0.05em",
+          color: COLORS.ink,
+          border: `1px solid ${COLORS.ink}`,
+        }}
+      >
+        {loading && <Loader2 size={13} className="animate-spin" />}
+        {loading ? "Loading..." : "Load more"}
+      </button>
+    </div>
+  );
+}
+
+function Home() {
+  const buildUrl = useCallback(
+    (offset, limit) => `${API_BASE}/api/catalog/new?offset=${offset}&limit=${limit}`,
+    []
+  );
+  const { products, loading, loadingMore, loadError, hasMore, loadMore } = useInfiniteProducts(buildUrl, []);
 
   return (
     <div>
-      <section className="px-4 pt-6 pb-4">
+      <section className="px-4 sm:px-8 lg:px-12 pt-6 pb-4">
         <div className="flex items-center gap-1 text-[11px] mb-3 uppercase" style={{ fontFamily: FONT.mono, color: COLORS.tan, letterSpacing: "0.12em" }}>
           <Sparkles size={12} /> New in this week
         </div>
@@ -338,30 +403,34 @@ function Home() {
       </section>
 
       {loading && (
-        <div className="px-4 py-16 flex flex-col items-center gap-2" style={{ color: COLORS.muted }}>
+        <div className="px-4 sm:px-8 lg:px-12 py-16 flex flex-col items-center gap-2" style={{ color: COLORS.muted }}>
           <Loader2 size={20} className="animate-spin" />
           <span className="text-xs" style={{ fontFamily: FONT.mono }}>Loading new arrivals...</span>
         </div>
       )}
 
       {!loading && loadError && (
-        <div className="px-4 py-16 text-center text-sm" style={{ color: COLORS.brick, fontFamily: FONT.body }}>
+        <div className="px-4 sm:px-8 lg:px-12 py-16 text-center text-sm" style={{ color: COLORS.brick, fontFamily: FONT.body }}>
           {loadError}
         </div>
       )}
 
       {!loading && !loadError && products.length === 0 && (
-        <div className="px-4 py-16 text-center text-sm" style={{ color: COLORS.muted, fontFamily: FONT.body }}>
+        <div className="px-4 sm:px-8 lg:px-12 py-16 text-center text-sm" style={{ color: COLORS.muted, fontFamily: FONT.body }}>
           No new arrivals right now — check back soon.
         </div>
       )}
 
       {!loading && !loadError && products.length > 0 && (
-        <section className="px-4 pb-16 pt-2 grid grid-cols-2 gap-x-3 gap-y-6">
-          {products.map((p) => (
-            <ProductCard key={p.pid} product={p} />
-          ))}
-        </section>
+        <>
+          <section className="px-4 sm:px-8 lg:px-12 pb-8 pt-2 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-x-3 sm:gap-x-4 gap-y-6 sm:gap-y-8">
+            {products.map((p) => (
+              <ProductCard key={p.pid} product={p} />
+            ))}
+          </section>
+          {hasMore && <LoadMoreButton onClick={loadMore} loading={loadingMore} />}
+          {!hasMore && <div className="pb-16" />}
+        </>
       )}
     </div>
   );
@@ -374,9 +443,6 @@ function Home() {
 function CategoryPage({ section, title }) {
   const [groups, setGroups] = useState([]);
   const [activeGroup, setActiveGroup] = useState(null); // null = "All"
-  const [products, setProducts] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState(null);
 
   // Load the sub-category tabs once per section.
   useEffect(() => {
@@ -393,28 +459,21 @@ function CategoryPage({ section, title }) {
     })();
   }, [section]);
 
-  // Load products whenever the section or active group changes.
-  useEffect(() => {
-    (async () => {
-      setLoading(true);
-      setLoadError(null);
-      try {
-        const groupParam = activeGroup ? `&group=${encodeURIComponent(activeGroup)}` : "";
-        const res = await fetch(`${API_BASE}/api/catalog?section=${section}${groupParam}`);
-        if (!res.ok) throw new Error("Could not load products.");
-        const data = await res.json();
-        setProducts(data.products || []);
-      } catch (err) {
-        setLoadError(err.message);
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, [section, activeGroup]);
+  const buildUrl = useCallback(
+    (offset, limit) => {
+      const groupParam = activeGroup ? `&group=${encodeURIComponent(activeGroup)}` : "";
+      return `${API_BASE}/api/catalog?section=${section}${groupParam}&offset=${offset}&limit=${limit}`;
+    },
+    [section, activeGroup]
+  );
+  const { products, loading, loadingMore, loadError, hasMore, loadMore } = useInfiniteProducts(buildUrl, [
+    section,
+    activeGroup,
+  ]);
 
   return (
     <div>
-      <section className="px-4 pt-6 pb-4">
+      <section className="px-4 sm:px-8 lg:px-12 pt-6 pb-4">
         <h1 style={{ fontFamily: FONT.display, color: COLORS.ink }} className="text-3xl font-semibold uppercase mb-1">
           {title}
         </h1>
@@ -424,7 +483,7 @@ function CategoryPage({ section, title }) {
       </section>
 
       {groups.length > 0 && (
-        <section className="px-4 pb-3 flex gap-2 overflow-x-auto" style={{ borderTop: `1px solid ${COLORS.line}`, borderBottom: `1px solid ${COLORS.line}` }}>
+        <section className="px-4 sm:px-8 lg:px-12 pb-3 flex gap-2 overflow-x-auto" style={{ borderTop: `1px solid ${COLORS.line}`, borderBottom: `1px solid ${COLORS.line}` }}>
           <button
             onClick={() => setActiveGroup(null)}
             className="shrink-0 px-3 py-1.5 mt-3 rounded-full text-xs uppercase transition-colors"
@@ -458,30 +517,33 @@ function CategoryPage({ section, title }) {
       )}
 
       {loading && (
-        <div className="px-4 py-16 flex flex-col items-center gap-2" style={{ color: COLORS.muted }}>
+        <div className="px-4 sm:px-8 lg:px-12 py-16 flex flex-col items-center gap-2" style={{ color: COLORS.muted }}>
           <Loader2 size={20} className="animate-spin" />
           <span className="text-xs" style={{ fontFamily: FONT.mono }}>Loading...</span>
         </div>
       )}
 
       {!loading && loadError && (
-        <div className="px-4 py-16 text-center text-sm" style={{ color: COLORS.brick, fontFamily: FONT.body }}>
+        <div className="px-4 sm:px-8 lg:px-12 py-16 text-center text-sm" style={{ color: COLORS.brick, fontFamily: FONT.body }}>
           {loadError}
         </div>
       )}
 
       {!loading && !loadError && products.length === 0 && (
-        <div className="px-4 py-16 text-center text-sm" style={{ color: COLORS.muted, fontFamily: FONT.body }}>
+        <div className="px-4 sm:px-8 lg:px-12 py-16 text-center text-sm" style={{ color: COLORS.muted, fontFamily: FONT.body }}>
           No products found in this category right now.
         </div>
       )}
 
       {!loading && !loadError && products.length > 0 && (
-        <section className="px-4 pb-16 pt-4 grid grid-cols-2 gap-x-3 gap-y-6">
-          {products.map((p) => (
-            <ProductCard key={p.pid} product={p} />
-          ))}
-        </section>
+        <>
+          <section className="px-4 sm:px-8 lg:px-12 pb-8 pt-4 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-x-3 sm:gap-x-4 gap-y-6 sm:gap-y-8">
+            {products.map((p) => (
+              <ProductCard key={p.pid} product={p} />
+            ))}
+          </section>
+          {hasMore && <LoadMoreButton onClick={loadMore} loading={loadingMore} />}
+        </>
       )}
     </div>
   );
@@ -538,7 +600,7 @@ function ProductDetail() {
 
   if (loading) {
     return (
-      <div className="px-4 py-16 flex flex-col items-center gap-2" style={{ color: COLORS.muted }}>
+      <div className="px-4 sm:px-8 lg:px-12 py-16 flex flex-col items-center gap-2" style={{ color: COLORS.muted }}>
         <Loader2 size={20} className="animate-spin" />
         <span className="text-xs" style={{ fontFamily: FONT.mono }}>Loading product...</span>
       </div>
@@ -547,7 +609,7 @@ function ProductDetail() {
 
   if (loadError || !product) {
     return (
-      <div className="px-4 py-16 text-center text-sm" style={{ color: COLORS.brick, fontFamily: FONT.body }}>
+      <div className="px-4 sm:px-8 lg:px-12 py-16 text-center text-sm" style={{ color: COLORS.brick, fontFamily: FONT.body }}>
         {loadError || "Product not found."}
       </div>
     );
@@ -563,13 +625,13 @@ function ProductDetail() {
     <div className="pb-24">
       <button
         onClick={() => navigate(-1)}
-        className="flex items-center gap-1 px-4 pt-4 pb-2 text-xs"
+        className="flex items-center gap-1 px-4 sm:px-8 lg:px-12 pt-4 pb-2 text-xs"
         style={{ fontFamily: FONT.mono, color: COLORS.muted }}
       >
         <ChevronLeft size={14} /> Back
       </button>
 
-      <div className="px-4">
+      <div className="px-4 sm:px-8 lg:px-12">
         <ImageOrFallback src={activeImage} alt={product.name} className="w-full aspect-square rounded-sm mb-2" />
         {product.images?.length > 1 && (
           <div className="flex gap-2 overflow-x-auto pb-2">
@@ -587,7 +649,7 @@ function ProductDetail() {
         )}
       </div>
 
-      <div className="px-4 pt-3">
+      <div className="px-4 sm:px-8 lg:px-12 pt-3">
         <h1 style={{ fontFamily: FONT.display, color: COLORS.ink }} className="text-2xl font-semibold uppercase mb-1">
           {product.name}
         </h1>
@@ -688,7 +750,7 @@ export default function App() {
           * { -webkit-tap-highlight-color: transparent; }
         `}</style>
         <div
-          className="max-w-md mx-auto"
+          className="max-w-6xl mx-auto"
           style={{ background: COLORS.stone, minHeight: "100vh", boxShadow: "0 0 40px rgba(0,0,0,0.08)" }}
         >
           <Header />
