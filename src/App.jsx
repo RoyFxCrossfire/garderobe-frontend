@@ -309,7 +309,7 @@ function CartDrawer() {
 // ─────────────────────────────────────────────────────────────────────────
 const PAGE_SIZE = 24;
 
-function useInfiniteProducts(buildUrl, deps) {
+function useInfiniteProducts(buildUrl, deps, { skip = false } = {}) {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -344,11 +344,12 @@ function useInfiniteProducts(buildUrl, deps) {
   );
 
   useEffect(() => {
+    if (skip) return;
     offsetRef.current = 0;
     setHasMore(true);
     fetchPage(0, true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, deps);
+  }, [skip, ...deps]);
 
   const loadMore = useCallback(() => {
     if (loading || loadingMore || !hasMore) return;
@@ -440,6 +441,79 @@ function Home() {
 // Category page (Women / Men) — an "All" view plus sub-category group tabs
 // (Tops & Sets, Bottoms, Outerwear, Accessories, etc.) matching the taxonomy.
 // ─────────────────────────────────────────────────────────────────────────
+// Shows one labeled sub-section per exact taxonomy leaf (e.g. "Women's
+// Camis", "Jumpsuits") within the currently active group, each with its
+// own small grid — mirrors the spec doc's structure.
+function GroupLeavesView({ section, group }) {
+  const [leaves, setLeaves] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
+
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      setLoadError(null);
+      try {
+        const res = await fetch(
+          `${API_BASE}/api/catalog/leaves?section=${section}&group=${encodeURIComponent(group)}`
+        );
+        if (!res.ok) throw new Error("Could not load this category.");
+        const data = await res.json();
+        setLeaves(data.leaves || []);
+      } catch (err) {
+        setLoadError(err.message);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [section, group]);
+
+  if (loading) {
+    return (
+      <div className="px-4 sm:px-8 lg:px-12 py-16 flex flex-col items-center gap-2" style={{ color: COLORS.muted }}>
+        <Loader2 size={20} className="animate-spin" />
+        <span className="text-xs" style={{ fontFamily: FONT.mono }}>Loading...</span>
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className="px-4 sm:px-8 lg:px-12 py-16 text-center text-sm" style={{ color: COLORS.brick, fontFamily: FONT.body }}>
+        {loadError}
+      </div>
+    );
+  }
+
+  if (leaves.length === 0) {
+    return (
+      <div className="px-4 sm:px-8 lg:px-12 py-16 text-center text-sm" style={{ color: COLORS.muted, fontFamily: FONT.body }}>
+        No products found in this category right now.
+      </div>
+    );
+  }
+
+  return (
+    <div className="pb-8">
+      {leaves.map((leaf) => (
+        <section key={leaf.name} className="pt-8">
+          <h2
+            className="px-4 sm:px-8 lg:px-12 mb-4 text-lg font-semibold uppercase"
+            style={{ fontFamily: FONT.display, color: COLORS.ink, letterSpacing: "0.03em" }}
+          >
+            {leaf.name}
+          </h2>
+          <div className="px-4 sm:px-8 lg:px-12 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-x-3 sm:gap-x-4 gap-y-6 sm:gap-y-8">
+            {leaf.products.map((p) => (
+              <ProductCard key={p.pid} product={p} />
+            ))}
+          </div>
+        </section>
+      ))}
+    </div>
+  );
+}
+
 function CategoryPage({ section, title }) {
   const [groups, setGroups] = useState([]);
   const [activeGroup, setActiveGroup] = useState(null); // null = "All"
@@ -459,17 +533,17 @@ function CategoryPage({ section, title }) {
     })();
   }, [section]);
 
+  // The flat, infinite-scroll "All" view only fetches when no specific
+  // group is selected — GroupLeavesView handles the specific-group case.
   const buildUrl = useCallback(
-    (offset, limit) => {
-      const groupParam = activeGroup ? `&group=${encodeURIComponent(activeGroup)}` : "";
-      return `${API_BASE}/api/catalog?section=${section}${groupParam}&offset=${offset}&limit=${limit}`;
-    },
-    [section, activeGroup]
+    (offset, limit) => `${API_BASE}/api/catalog?section=${section}&offset=${offset}&limit=${limit}`,
+    [section]
   );
-  const { products, loading, loadingMore, loadError, hasMore, loadMore } = useInfiniteProducts(buildUrl, [
-    section,
-    activeGroup,
-  ]);
+  const { products, loading, loadingMore, loadError, hasMore, loadMore } = useInfiniteProducts(
+    buildUrl,
+    [section],
+    { skip: activeGroup !== null }
+  );
 
   return (
     <div>
@@ -516,33 +590,39 @@ function CategoryPage({ section, title }) {
         </section>
       )}
 
-      {loading && (
-        <div className="px-4 sm:px-8 lg:px-12 py-16 flex flex-col items-center gap-2" style={{ color: COLORS.muted }}>
-          <Loader2 size={20} className="animate-spin" />
-          <span className="text-xs" style={{ fontFamily: FONT.mono }}>Loading...</span>
-        </div>
-      )}
+      {activeGroup !== null && <GroupLeavesView section={section} group={activeGroup} />}
 
-      {!loading && loadError && (
-        <div className="px-4 sm:px-8 lg:px-12 py-16 text-center text-sm" style={{ color: COLORS.brick, fontFamily: FONT.body }}>
-          {loadError}
-        </div>
-      )}
-
-      {!loading && !loadError && products.length === 0 && (
-        <div className="px-4 sm:px-8 lg:px-12 py-16 text-center text-sm" style={{ color: COLORS.muted, fontFamily: FONT.body }}>
-          No products found in this category right now.
-        </div>
-      )}
-
-      {!loading && !loadError && products.length > 0 && (
+      {activeGroup === null && (
         <>
-          <section className="px-4 sm:px-8 lg:px-12 pb-8 pt-4 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-x-3 sm:gap-x-4 gap-y-6 sm:gap-y-8">
-            {products.map((p) => (
-              <ProductCard key={p.pid} product={p} />
-            ))}
-          </section>
-          {hasMore && <LoadMoreButton onClick={loadMore} loading={loadingMore} />}
+          {loading && (
+            <div className="px-4 sm:px-8 lg:px-12 py-16 flex flex-col items-center gap-2" style={{ color: COLORS.muted }}>
+              <Loader2 size={20} className="animate-spin" />
+              <span className="text-xs" style={{ fontFamily: FONT.mono }}>Loading...</span>
+            </div>
+          )}
+
+          {!loading && loadError && (
+            <div className="px-4 sm:px-8 lg:px-12 py-16 text-center text-sm" style={{ color: COLORS.brick, fontFamily: FONT.body }}>
+              {loadError}
+            </div>
+          )}
+
+          {!loading && !loadError && products.length === 0 && (
+            <div className="px-4 sm:px-8 lg:px-12 py-16 text-center text-sm" style={{ color: COLORS.muted, fontFamily: FONT.body }}>
+              No products found in this category right now.
+            </div>
+          )}
+
+          {!loading && !loadError && products.length > 0 && (
+            <>
+              <section className="px-4 sm:px-8 lg:px-12 pb-8 pt-4 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-x-3 sm:gap-x-4 gap-y-6 sm:gap-y-8">
+                {products.map((p) => (
+                  <ProductCard key={p.pid} product={p} />
+                ))}
+              </section>
+              {hasMore && <LoadMoreButton onClick={loadMore} loading={loadingMore} />}
+            </>
+          )}
         </>
       )}
     </div>
