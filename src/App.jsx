@@ -682,19 +682,24 @@ function ProductDetail() {
 export default function App() {
   return (
     <CartProvider>
-      <div style={{ background: COLORS.stone, minHeight: "100vh" }} className="w-full">
+      <div style={{ background: "#DDD9CE", minHeight: "100vh" }} className="w-full">
         <style>{`
           @import url('https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
           * { -webkit-tap-highlight-color: transparent; }
         `}</style>
-        <Header />
-        <Routes>
-          <Route path="/" element={<Home />} />
-          <Route path="/women" element={<CategoryPage section="dames" title="Women" />} />
-          <Route path="/men" element={<CategoryPage section="heren" title="Men" />} />
-          <Route path="/product/:pid" element={<ProductDetail />} />
-        </Routes>
-        <Footer />
+        <div
+          className="max-w-md mx-auto"
+          style={{ background: COLORS.stone, minHeight: "100vh", boxShadow: "0 0 40px rgba(0,0,0,0.08)" }}
+        >
+          <Header />
+          <Routes>
+            <Route path="/" element={<Home />} />
+            <Route path="/women" element={<CategoryPage section="dames" title="Women" />} />
+            <Route path="/men" element={<CategoryPage section="heren" title="Men" />} />
+            <Route path="/product/:pid" element={<ProductDetail />} />
+          </Routes>
+          <Footer />
+        </div>
         <CartDrawer />
       </div>
     </CartProvider>
